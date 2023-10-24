@@ -22,6 +22,8 @@
    Modified from the original GDB file referenced above by the CUDA-GDB
    team at NVIDIA <cudatools@nvidia.com>. */
 
+/* Copyright (C) 2023 Linaro Limited (or its affiliates). All rights reserved. */
+
 #include "defs.h"
 #include "arch-utils.h"
 #include <ctype.h>
@@ -279,6 +281,9 @@ static struct breakpoint_ops bkpt_probe_breakpoint_ops;
 
 /* Tracepoints set on probes.  */
 static struct breakpoint_ops tracepoint_probe_breakpoint_ops;
+
+/* Used for CUDA auto breakpoints (i.e. set cuda break_on_launch 1) */
+struct breakpoint_ops cuda_auto_breakpoint_ops;
 
 /* Dynamic printf class type.  */
 struct breakpoint_ops dprintf_breakpoint_ops;
@@ -16176,6 +16181,18 @@ save_tracepoints_command (const char *args, int from_tty)
 }
 
 #ifdef NVIDIA_CUDA_GDB
+// Inform the user that the breakpoint is an automatic CUDA breakpoint
+static enum print_stop_action
+print_cuda_auto_breakpoint (bpstat* bs)
+{
+  ui_out *uiout = current_uiout;
+
+  uiout->text ("\nBreakpoint on CUDA kernel launch at ");
+  if (uiout->is_mi_like_p ())
+	uiout->field_string ("reason", async_reason_lookup (EXEC_ASYNC_BREAKPOINT_HIT));
+  return PRINT_SRC_AND_LOC;
+}
+
 void
 cuda_auto_breakpoints_forced_add_location (elf_image_t elf_image, CORE_ADDR addr)
 {
@@ -16198,7 +16215,7 @@ cuda_auto_breakpoints_forced_add_location (elf_image_t elf_image, CORE_ADDR addr
   if (!*bp)
     {
       *bp = create_internal_breakpoint (cuda_gdbarch, addr, bp_cuda_auto,
-                                        &momentary_breakpoint_ops);
+                                        &cuda_auto_breakpoint_ops);
       (*bp)->enable_state = bp_disabled;
       /* location has to be used or breakpoint_re_set will delete me.  */
       gdb::unique_xmalloc_ptr<char> str = xstrprintf ("*%s", paddress (cuda_gdbarch, (*bp)->loc->address));
@@ -16380,7 +16397,7 @@ cuda_auto_breakpoints_event_add_break (elf_image_t elf_image, CORE_ADDR addr)
   addr = adjust_breakpoint_address (cuda_gdbarch, addr, bp_cuda_auto);
   /* Create an internal temporary breakpoint. */
   struct breakpoint *bp = create_internal_breakpoint (cuda_gdbarch, addr, bp_cuda_auto,
-						      &momentary_breakpoint_ops);
+						      &cuda_auto_breakpoint_ops);
   bp->enable_state = bp_enabled; 
   bp->disposition = disp_del;
   /* location has to be used or breakpoint_re_set will delete me.  */
@@ -16594,6 +16611,13 @@ initialize_breakpoint_ops (void)
   ops->remove_location = bkpt_probe_remove_location;
   ops->create_sals_from_location = bkpt_probe_create_sals_from_location;
   ops->decode_location = bkpt_probe_decode_location;
+
+#ifdef NVIDIA_CUDA_GDB
+  /* CUDA automatic breakpoints (stop on kernel launch) */
+  ops = &cuda_auto_breakpoint_ops;
+  *ops = momentary_breakpoint_ops;
+  ops->print_it = print_cuda_auto_breakpoint;
+#endif
 
   /* Watchpoints.  */
   ops = &watchpoint_breakpoint_ops;

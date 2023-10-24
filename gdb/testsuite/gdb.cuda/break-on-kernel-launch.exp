@@ -1,0 +1,39 @@
+# Copyright 2019 Free Software Foundation, Inc.
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+# This file is part of the gdb testsuite
+#
+# Copyright (C) 2023 Linaro Limited (or its affiliates). All rights reserved.
+#
+# Test CUDA GDB breaks on an application kernel.
+#
+standard_testfile .cu
+if [get_compiler_info "c++"] {
+    return -1
+}
+
+if {[prepare_for_testing $testfile.exp $testfile $srcfile {debug c++}]} {
+    return -1
+}
+
+if ![runto_main] then {
+    perror "couldn't run to breakpoint"
+    continue
+}
+
+gdb_test_no_output "set cuda break_on_launch application"
+
+gdb_test "continue" ".*Breakpoint on CUDA kernel launch at hello<<<\\\(1,1,1\\\),\\\(16,1,1\\\)>>> \\\(a=$hex \\\"Hello \\\", b=$hex\\\) at .*break-on-kernel-launch.cu:10.*"
+
+gdb_test "info program" ".*It stopped at a breakpoint that has since been deleted.*"
+gdb_test "continue" "" "run application to end"
